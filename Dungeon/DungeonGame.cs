@@ -15,7 +15,7 @@ internal sealed class DungeonGame : GameWindow
     private const int MapWidth = 25;
     private const int MapHeight = 25;
     private const float Tile = 2.4f;
-    private const float WallHeight = 2.9f;
+    private const float WallHeight = 4.6f;
     private const float EyeHeight = 1.66f;
     private const float PlayerRadius = 0.28f;
     private const int MaxLights = 8;
@@ -34,6 +34,7 @@ internal sealed class DungeonGame : GameWindow
     private float pitch;
     private float travelled;
     private float headBob;
+    private float fieldOfView = 74f;
     private bool mouseCaptured = true;
 
     public DungeonGame(GameWindowSettings gameSettings, NativeWindowSettings windowSettings)
@@ -113,9 +114,12 @@ internal sealed class DungeonGame : GameWindow
         if (KeyboardState.IsKeyDown(Keys.D)) desired += right;
         if (KeyboardState.IsKeyDown(Keys.A)) desired -= right;
         if (desired.LengthSquared > 1f) desired = Vector3.Normalize(desired);
-        float speed = KeyboardState.IsKeyDown(Keys.LeftShift) ? 5.5f : 3.35f;
+        bool sprint = KeyboardState.IsKeyDown(Keys.LeftShift) && KeyboardState.IsKeyDown(Keys.W)
+            && !KeyboardState.IsKeyDown(Keys.S);
+        float speed = sprint ? 6.8f : 4.25f;
         desired *= speed;
-        float response = 1f - MathF.Exp(-12f * dt);
+        float response = 1f - MathF.Exp(-25f * dt);
+        fieldOfView += ((sprint ? 81f : 74f) - fieldOfView) * (1f - MathF.Exp(-10f * dt));
         velocity.X += (desired.X - velocity.X) * response;
         velocity.Z += (desired.Z - velocity.Z) * response;
 
@@ -125,7 +129,7 @@ internal sealed class DungeonGame : GameWindow
         if (CanStand(position.X, nextZ)) position.Z = nextZ; else velocity.Z = 0;
         float planarSpeed = new Vector2(velocity.X, velocity.Z).Length;
         travelled += planarSpeed * dt;
-        float bobTarget = planarSpeed > 0.2f ? MathF.Sin(travelled * 7.5f) * 0.035f : 0f;
+        float bobTarget = planarSpeed > 0.2f ? MathF.Sin(travelled * 5.5f) * 0.016f : 0f;
         headBob += (bobTarget - headBob) * Math.Min(1f, 10f * dt);
     }
 
@@ -139,7 +143,7 @@ internal sealed class DungeonGame : GameWindow
         Vector3 front = new(MathF.Cos(yaw) * MathF.Cos(pitch), MathF.Sin(pitch), MathF.Sin(yaw) * MathF.Cos(pitch));
         Matrix4 view = Matrix4.LookAt(eye, eye + front, Vector3.UnitY);
         float aspect = ClientSize.Y == 0 ? 1f : ClientSize.X / (float)ClientSize.Y;
-        Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView(MathHelper.DegreesToRadians(70f), aspect, 0.07f, 72f);
+        Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView(MathHelper.DegreesToRadians(fieldOfView), aspect, 0.07f, 72f);
         SetMatrix("view", view);
         SetMatrix("projection", projection);
         GL.Uniform3(GL.GetUniformLocation(shader, "eyePosition"), eye);
@@ -151,9 +155,9 @@ internal sealed class DungeonGame : GameWindow
         dungeonMesh?.Draw();
 
         GL.Disable(EnableCap.CullFace);
-        SetMaterial(true, new Vector3(1f, 0.09f, 0.012f));
+        SetMaterial(true, new Vector3(0.37f, 0.58f, 0.62f));
         torchMesh?.Draw();
-        SetMaterial(true, new Vector3(0.012f, 0.16f, 0.72f));
+        SetMaterial(true, new Vector3(0.44f, 0.045f, 0.025f));
         crystalMesh?.Draw();
         GL.Enable(EnableCap.CullFace);
 
@@ -217,18 +221,21 @@ internal sealed class DungeonGame : GameWindow
             walkable[tx, tz] = true;
             stack.Push(new Vector2i(tx, tz));
         }
-        CarveRoom(8, 3, 4, 4); CarveRoom(15, 10, 5, 4); CarveRoom(3, 17, 5, 4); CarveRoom(17, 19, 4, 3);
+        CarveRoom(1, 1, 8, 7);
+        CarveRoom(13, 3, 9, 7);
+        CarveRoom(3, 14, 8, 9);
+        CarveRoom(15, 14, 8, 8);
 
-        lights.Add(new Light(new Vector3(1.5f * Tile, 1.72f, 1.5f * Tile + 0.65f), new Vector3(5.8f, 1.35f, 0.16f), false));
+        lights.Add(new Light(new Vector3(1.5f * Tile, 3.8f, 2.5f * Tile), new Vector3(3.1f, 5.2f, 5.5f), false));
         int n = 0;
         for (int z = 1; z < MapHeight - 1; z++)
         for (int x = 1; x < MapWidth - 1; x++)
         {
             if (!walkable[x, z]) continue;
             n++;
-            Vector3 p = new((x + 0.5f) * Tile, 1.7f, (z + 0.5f) * Tile);
-            if (n % 11 == 0) lights.Add(new Light(p, new Vector3(5.5f, 1.2f, 0.13f), false));
-            else if (n % 31 == 0) lights.Add(new Light(p with { Y = 0.7f }, new Vector3(0.08f, 1.1f, 4.2f), true));
+            Vector3 p = new((x + 0.5f) * Tile, 3.8f, (z + 0.5f) * Tile);
+            if (n % 13 == 0) lights.Add(new Light(p, new Vector3(2.1f, 3.4f, 3.7f), false));
+            else if (n % 37 == 0) lights.Add(new Light(p, new Vector3(4.2f, 0.34f, 0.18f), true));
         }
     }
 
@@ -236,6 +243,13 @@ internal sealed class DungeonGame : GameWindow
     {
         for (int z = top; z < top + height && z < MapHeight - 1; z++)
         for (int x = left; x < left + width && x < MapWidth - 1; x++) walkable[x, z] = true;
+
+        foreach (int x in new[] { left + 1, left + width - 2 })
+        foreach (int z in new[] { top + 1, top + height - 2 })
+        {
+            Vector3 center = new((x + 0.5f) * Tile, 3.8f, (z + 0.5f) * Tile);
+            lights.Add(new Light(center, new Vector3(2.7f, 4.4f, 4.8f), false));
+        }
     }
 
     private bool CanStand(float x, float z)
@@ -271,8 +285,10 @@ internal sealed class DungeonGame : GameWindow
         MeshBuilder torches = new(), crystals = new();
         foreach (Light light in lights)
         {
-            if (light.IsCrystal) crystals.Octahedron(light.Position, 0.22f, 0.52f);
-            else torches.Octahedron(light.Position, 0.12f, 0.27f);
+            MeshBuilder fixture = light.IsCrystal ? crystals : torches;
+            Vector3 p = light.Position + Vector3.UnitY * (WallHeight - 3.81f);
+            fixture.Quad(p + new Vector3(-0.48f, 0, -0.085f), p + new Vector3(0.48f, 0, -0.085f),
+                p + new Vector3(0.48f, 0, 0.085f), p + new Vector3(-0.48f, 0, 0.085f), -Vector3.UnitY, 1, 1);
         }
         torchMesh = torches.Build();
         crystalMesh = crystals.Build();
@@ -305,16 +321,17 @@ internal sealed class DungeonGame : GameWindow
             normals[i] = (byte)((n.Z * 0.5f + 0.5f) * 255); // B
             normals[i + 1] = (byte)((n.Y * 0.5f + 0.5f) * 255); // G
             normals[i + 2] = (byte)((n.X * 0.5f + 0.5f) * 255); // R
-            normals[i + 3] = 255;
+            normals[i + 3] = (byte)(Math.Clamp(Height(x, y) * 3f, 0f, 1f) * 255);
         }
-        return (UploadTexture(image.Width, image.Height, pixels), UploadTexture(image.Width, image.Height, normals));
+        return (UploadTexture(image.Width, image.Height, pixels, PixelInternalFormat.Srgb8Alpha8),
+            UploadTexture(image.Width, image.Height, normals, PixelInternalFormat.Rgba8));
     }
 
-    private static int UploadTexture(int width, int height, byte[] pixels)
+    private static int UploadTexture(int width, int height, byte[] pixels, PixelInternalFormat format)
     {
         int id = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, id);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, format, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
         GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
@@ -462,14 +479,52 @@ internal sealed class DungeonGame : GameWindow
             vec3 G = normalize(geometricNormal);
             vec3 dpdx = dFdx(worldPosition), dpdy = dFdy(worldPosition);
             vec2 duvdx = dFdx(uv), duvdy = dFdy(uv);
-            vec3 T = normalize(dpdx * duvdy.y - dpdy * duvdx.y);
-            T = normalize(T - G * dot(G, T));
-            vec3 B = normalize(cross(G, T));
-            vec3 mapNormal = texture(normalMap, uv).rgb * 2.0 - 1.0;
-            vec3 N = normalize(T * mapNormal.x + B * mapNormal.y + G * mapNormal.z);
             vec3 V = normalize(eyePosition - worldPosition);
-            vec3 albedo = texture(albedoMap, uv).rgb * tint;
-            vec3 lighting = vec3(0.006, 0.008, 0.014);
+            vec3 N = G;
+            vec3 albedo;
+            float gloss;
+            if (abs(G.y) < 0.5) {
+                float orientation = sign(duvdx.x * duvdy.y - duvdx.y * duvdy.x);
+                vec3 T = normalize(dpdx * duvdy.y - dpdy * duvdx.y) * orientation;
+                vec3 B = normalize(cross(G, T));
+                vec2 offset = vec2(dot(V, T), dot(V, B)) * 0.026 / max(dot(V, G), 0.28);
+                vec2 stoneUv = uv - offset * (1.0 - texture(normalMap, uv).a);
+                vec3 relief = texture(normalMap, stoneUv).rgb * 2.0 - 1.0;
+                N = normalize(mat3(T, B, G) * vec3(relief.xy * 1.45, relief.z));
+                albedo = texture(albedoMap, stoneUv).rgb;
+                float seep = smoothstep(0.35, 0.8, texture(normalMap, stoneUv * vec2(0.43, 0.13)).a);
+                albedo *= mix(0.95, 0.53, seep);
+                gloss = mix(0.16, 0.65, seep);
+            } else if (G.y > 0.0) {
+                // Worn slate slabs laid in staggered rows.
+                vec2 slab = worldPosition.xz / vec2(1.2, 0.8);
+                slab.x += mod(floor(slab.y), 2.0) * 0.5;
+                vec2 edge = min(fract(slab), 1.0 - fract(slab));
+                float seam = smoothstep(0.02, 0.06, min(edge.x, edge.y));
+                float fleck = texture(albedoMap, worldPosition.xz * 0.37).g;
+                albedo = mix(vec3(0.008, 0.012, 0.016), vec3(0.085, 0.105, 0.12) * (0.6 + fleck * 4.0), seam);
+                vec2 p = worldPosition.xz;
+                float basin = sin(p.x * 1.45 + sin(p.y * 0.83)) + sin(p.y * 1.24 - p.x * 0.38);
+                float puddle = smoothstep(0.66, 0.94, basin);
+                vec2 drop = fract(p * 0.63) - vec2(0.48, 0.51);
+                float radius = length(drop);
+                float ripple = sin(radius * 110.0 - time * 13.0) * exp(-radius * 6.0);
+                N = normalize(G + vec3(drop.x, 0.0, drop.y) * ripple * puddle * 0.85);
+                albedo *= mix(0.75, 0.31, puddle);
+                gloss = mix(0.12 * seam, 0.95, puddle);
+            } else {
+                // Matte, smoke-stained brickwork overhead.
+                vec2 brick = worldPosition.xz / vec2(0.58, 0.32);
+                brick.x += mod(floor(brick.y), 2.0) * 0.5;
+                vec2 edge = min(fract(brick), 1.0 - fract(brick));
+                float mortar = smoothstep(0.02, 0.08, min(edge.x, edge.y));
+                float soot = texture(albedoMap, worldPosition.xz * 0.25).r;
+                albedo = mix(vec3(0.024, 0.020, 0.017), vec3(0.086, 0.045, 0.028) * (0.5 + soot * 4.0), mortar);
+                gloss = 0.035;
+            }
+            albedo *= tint;
+            vec3 lighting = vec3(0.022, 0.031, 0.039);
+            vec3 highlights = vec3(0.0);
 
             for (int i = 0; i < lightCount; i++) {
                 vec3 delta = lightPositions[i] - worldPosition;
@@ -478,16 +533,20 @@ internal sealed class DungeonGame : GameWindow
                 float radiusFalloff = pow(clamp(1.0 - distanceToLight / 10.5, 0.0, 1.0), 2.0);
                 float attenuation = radiusFalloff / (1.0 + 0.07 * distanceToLight * distanceToLight);
                 float diffuse = max(dot(N, L), 0.0);
-                float specular = pow(max(dot(reflect(-L, N), V), 0.0), 34.0) * 0.22;
-                float flicker = i == 0 ? 1.0 : 0.90 + sin(time * 8.7 + float(i) * 2.31) * 0.10;
-                lighting += lightColors[i] * (diffuse + specular) * attenuation * flicker;
+                float specular = pow(max(dot(reflect(-L, N), V), 0.0), 34.0) * gloss;
+                float phase = time * 2.1 + dot(lightPositions[i].xz, vec2(0.71, 1.37));
+                float flicker = i == 0 ? 1.0 : mix(0.28, 1.0, smoothstep(-0.98, -0.82, sin(phase + sin(phase * 4.1))));
+                vec3 incident = lightColors[i] * attenuation * flicker;
+                lighting += incident * diffuse;
+                highlights += incident * specular * 0.22;
             }
 
-            vec3 hdr = albedo * lighting;
+            vec3 hdr = albedo * lighting + highlights;
             float distanceFromEye = length(eyePosition - worldPosition);
-            float fogNoise = sin(worldPosition.x * 0.31 + worldPosition.z * 0.19) * 0.04;
-            float fog = clamp(1.0 - exp(-distanceFromEye * 0.075) + fogNoise, 0.0, 0.94);
-            hdr = mix(hdr, vec3(0.003, 0.006, 0.013), fog);
+            float drift = 0.75 + 0.25 * sin(worldPosition.x * 0.41 + worldPosition.z * 0.26 - time * 0.38);
+            float groundHaze = exp(-max(worldPosition.y, 0.0) * 1.9) * drift;
+            float fog = 1.0 - exp(-distanceFromEye * (0.055 + groundHaze * 0.075));
+            hdr = mix(hdr, vec3(0.003, 0.009, 0.011), fog);
             vec3 mapped = hdr / (hdr + vec3(1.0));
             outputColor = vec4(pow(mapped, vec3(1.0 / 2.2)), 1.0);
         }
